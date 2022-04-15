@@ -1,13 +1,15 @@
-/* Window blinds
+/*******************************************
+ *  Window blinds
  * April, 2022
  * 
  * Author: Piotr J. Węgrzyn
  * Email: piotrwegrzyn@protonmail.com
- */
+ *******************************************/
 
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
 #include <EEPROM.h>
+#include <Servo.h>
 
 static const char *AP_SSID = "ssid";
 static const char *AP_PASS = "pass";
@@ -25,6 +27,9 @@ static const uint8_t CMD_GET_RES = 0x10;
 static bool _configured = true;
 static WiFiUDP _udp_instance;
 static uint16_t _id = 0x0;
+static Servo _microservo;
+static uint8_t _srv_pos = 0;
+static uint32_t _srv_time = 5000;
 
 
 /* Function send_pkt() sends packets
@@ -39,7 +44,7 @@ bool send_pkt(IPAddress rcv_addr, uint16_t port=STD_PORT, uint8_t cmd=CMD_BRD) {
     switch (cmd) {
         case CMD_GET_RES:
             buffer[3] = get_phr_val();  // photoresistor value
-            buffer[4] = get_ser_val();  // microservo position
+            buffer[4] = _srv_pos;       // microservo position
             break;
         default:
             buffer[3] = 0x0;
@@ -50,6 +55,28 @@ bool send_pkt(IPAddress rcv_addr, uint16_t port=STD_PORT, uint8_t cmd=CMD_BRD) {
     _udp_instance.beginPacket(rcv_addr, STD_PORT);
     _udp_instance.print(buffer);
     return _udp_instance.endPacket() == 1 ? true : false;
+}
+
+
+/* Function handle_pkt() serves incoming packets
+ * Returns true if packet was handled correctly
+ */
+bool handle_pkt() {
+    char *pkt;
+    uint8_t len = _udp_instance.read(pkt, STD_PKT_SIZE);
+    if (len > 0) {
+        switch (pkt[0]){
+            case CMD_SET_REQ:
+                return set_params(pkt);
+            case CMD_GET_REQ:
+                return send_pkt(_udp_instance.remoteIP(), STD_PORT, CMD_GET_RES);
+            default:
+                return false;
+        }
+    }
+    
+    Serial.println("Empty packet");
+    return false;
 }
 
 
@@ -92,28 +119,42 @@ bool set_wifi_con(uint8_t timeout=60) {
  * Returns true if params are set correctly
  */
 bool set_params(char *params) {
-
-    // set new ID
-    if (params[1] & 0x10) {
+    if (params[1] & 0x10) { // ID
         _id = params[2] << 8 | params[3];
         EEPROM.write(4, params[2]);
         EEPROM.write(5, params[3]);
         EEPROM.commit();
     }
-
-    // set microservo position
-    if (params[1] & 0x01) {
+    if (params[1] & 0x01) { // microservo position
         return set_ser_pos(params[4]);
     }
     return true;
 }
 
 
-/* Function set_ser_pos() set received parameters
- * Returns true if params are set correctly
+/* Function set_ser_con()
+ * Set up microservo conectivity
+ */
+void set_ser_con() {
+    _microservo.attach(2);  // D4 pin
+    _microservo.write(90);
+}
+
+
+/* Function set_ser_pos()
+ * Rotates microservo
  */
 bool set_ser_pos(uint8_t pos) {
-    // TODO
+    uint32_t rot_time = static_cast<uint32_t>((_srv_time * abs(_srv_pos - pos))/255);
+    if (_srv_pos > pos) {
+        _microservo.write(0);
+    }
+    else if (_srv_pos < pos) {
+        _microservo.write(180);
+    }
+    delay(rot_time);
+    _microservo.write(90);
+    _srv_pos = pos;
     return true;
 }
 
@@ -136,29 +177,6 @@ IPAddress get_brd_addr() {
 }
 
 
-/* Function handle_pkt() serves incoming packets
- * Returns true if packet was handled correctly
- */
-bool handle_pkt() {
-    char pkt[STD_PKT_SIZE + 1];
-    uint8_t len = _udp_instance.read(pkt, STD_PKT_SIZE);
-    if (len > 0) {
-        pkt[STD_PKT_SIZE] = '\0';
-        switch (pkt[0]){
-            case CMD_SET_REQ:
-                return set_params(pkt);
-            case CMD_GET_REQ:
-                return send_pkt(_udp_instance.remoteIP(), STD_PORT, CMD_GET_RES);
-            default:
-                return false;
-        }
-    }
-    
-    Serial.println("Empty packet");
-    return false;
-}
-
-
 /* Function get_phr_val()
  * Returns value of resistance on photoresistor (0-255)
  */
@@ -167,17 +185,10 @@ uint8_t get_phr_val() {
 }
 
 
-/* Function get_ser_val()
- * Returns position of microservo (0-255)
- */
-uint8_t get_ser_val() {
-    // TODO
-    return 0;
-}
-
-
 void setup() {
     Serial.begin(9600);
+    
+    set_ser_con();
 
     EEPROM.begin(4);
 
