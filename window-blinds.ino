@@ -62,7 +62,7 @@ bool send_pkt(IPAddress rcv_addr, uint16_t port=STD_PORT, uint8_t cmd=CMD_BRD) {
  * Returns true if packet was handled correctly
  */
 bool handle_pkt() {
-    char *pkt;
+    char pkt[STD_PKT_SIZE];
     uint8_t len = _udp_instance.read(pkt, STD_PKT_SIZE);
     if (len > 0) {
         switch (pkt[0]){
@@ -84,6 +84,7 @@ bool handle_pkt() {
  * Copy EEPROM ID to program
  */
 void set_eeprom_id() {
+    EEPROM.begin(4);
     _id = EEPROM.read(1) << 8 | EEPROM.read(2);
 }
 
@@ -120,10 +121,13 @@ bool set_wifi_con(uint8_t timeout=60) {
  */
 bool set_params(char *params) {
     if (params[1] & 0x10) { // ID
-        _id = params[2] << 8 | params[3];
-        EEPROM.write(4, params[2]);
-        EEPROM.write(5, params[3]);
-        EEPROM.commit();
+        uint16_t new_id = params[2] << 8 | params[3];
+        if (new_id != _id) {
+            _id = new_id;
+            EEPROM.write(1, params[2]);
+            EEPROM.write(2, params[3]);
+            EEPROM.commit();
+        }
     }
     if (params[1] & 0x01) { // microservo position
         return set_ser_pos(params[4]);
@@ -189,8 +193,6 @@ void setup() {
     Serial.begin(9600);
     
     set_ser_con();
-
-    EEPROM.begin(4);
 
     set_eeprom_id();
     
