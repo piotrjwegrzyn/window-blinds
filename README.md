@@ -2,14 +2,22 @@
 Arduino-compatibile ESP8266 module's firmware for WiFi connection, photoresistor and microservos in smart-home system.
 
 ## Hardware
-* ESP8266-12E
-* manually **modified** Micro servo MG90S
-* photoresistor 10 kOhm
-* some other resistors
+* 1x ESP8266-12E
+* 1x Micro servo MG90S with removed potentiometer (for infinite rotation)
+* 1x photoresistor 10 kOhm
+* 2x resistor 10 kOhm
+* 1x resistor 500 Ohm
+* 1x LED
+* 1x button switch
 
-### ESP8266-12E pinout
-![pinout.png](docs/pinout.png) 
+### Circut
+![circut.png](docs/circut.png) 
 
+### Functionalities
+* WiFi connectivity, broadcast and simple management
+* photoresistor's resistance measurement
+* microservo calibration with LED signalling
+* microservo rotation
 
 ## WiFi connectivity
 To serve connectivity UDP is used. All packets are at most 5-bytes long.
