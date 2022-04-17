@@ -24,7 +24,7 @@ static const uint8_t CMD_GET_REQ = 0x02;
 static const uint8_t CMD_GET_RES = 0x10;
 
 
-static bool _configured = true;
+static bool _configured = false;
 static WiFiUDP _udp_instance;
 static uint16_t _id = 0x0;
 static Servo _microservo;
@@ -80,6 +80,52 @@ bool handle_pkt() {
 }
 
 
+/* Function srv_time_conf()
+ * Configures microservo's rotation time
+ */
+void srv_time_conf() {
+    Serial.println("Configuration has started");
+    while (analogRead(D2) > 0) {
+        blink_led(1, 100);
+    }
+
+    while (analogRead(D2) < 1) {
+        blink_led(1, 100);
+    }
+
+    blink_led(1, 1000);
+    uint32_t start_time = millis();
+    _microservo.write(180);
+    while (analogRead(D2) > 0) {
+        delay(10);
+        continue;
+    }
+
+    _microservo.write(90);
+    _srv_time = millis() - start_time;
+    blink_led(1, 1000);
+    _srv_pos = 0xFF;
+    set_ser_pos(0x0);
+    Serial.printf("Configuration has ended. Rotate time: %d\n", _srv_time);
+    _configured = true;
+    blink_led(3, 500);
+}
+
+
+/* Function blink_led()
+ * Blinks LED for given times and delay
+ */
+void blink_led(uint8_t times, uint32_t ms) {
+    while (times > 0) {
+        digitalWrite(D1, HIGH);
+        delay(ms);
+        digitalWrite(D1, LOW);
+        delay(ms);
+        times--;
+    }
+}
+
+
 /* Function set_eeprom_id()
  * Copy EEPROM ID to program
  */
@@ -109,8 +155,10 @@ bool set_wifi_con(uint8_t timeout=60) {
             Serial.printf("Connected, IP address: %s\n", WiFi.localIP().toString().c_str());
             return true;
         }
+
         delay(STD_DELAY);
     }
+
     Serial.println("Connection failed (timeout)");
     return false;
 }
@@ -129,9 +177,11 @@ bool set_params(char *params) {
             EEPROM.commit();
         }
     }
+
     if (params[1] & 0x01) { // microservo position
         return set_ser_pos(params[4]);
     }
+
     return true;
 }
 
@@ -156,6 +206,7 @@ bool set_ser_pos(uint8_t pos) {
     else if (_srv_pos < pos) {
         _microservo.write(180);
     }
+
     delay(rot_time);
     _microservo.write(90);
     _srv_pos = pos;
@@ -191,15 +242,15 @@ uint8_t get_phr_val() {
 
 void setup() {
     Serial.begin(9600);
-    
-    set_ser_con();
+    pinMode(D1, OUTPUT);
 
+    set_ser_con();
     set_eeprom_id();
-    
+
     if (!set_wifi_con()) {
         Serial.println("Error while WiFi establishment");
     }
-    
+
     if (!set_udp_rcv(STD_PORT)) {
         Serial.println("Error while UDP start");
     }
@@ -207,11 +258,20 @@ void setup() {
 
 
 void loop() {
+    if (!_configured) {
+        Serial.println("Microservo is not configured");
+    }
+
+    if (analogRead(D2) > 0) {
+        srv_time_conf();
+    }
+
     if (_configured && get_pkt_size()) {
         if(!handle_pkt()) {
             Serial.println("Error occured while handling packet");
         }
     }
+
     send_pkt(get_brd_addr());
     delay(STD_DELAY);
 }
