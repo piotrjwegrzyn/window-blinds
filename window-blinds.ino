@@ -14,7 +14,12 @@
 static const char *AP_SSID = "ssid";
 static const char *AP_PASS = "pass";
 
-static const uint16_t STD_DELAY = 1000;
+static const uint16_t STD_DELAY_L = 2000;
+static const uint16_t STD_DELAY_M = 1000;
+static const uint16_t STD_DELAY_S = 500;
+static const uint16_t STD_DELAY_XS = 100;
+static const uint16_t STD_DELAY_XXS = 10;
+
 static const uint16_t STD_PORT = 4210;
 static const size_t STD_PKT_SIZE = 5;
 
@@ -23,35 +28,35 @@ static const uint8_t CMD_SET_REQ = 0x01;
 static const uint8_t CMD_GET_REQ = 0x02;
 static const uint8_t CMD_GET_RES = 0x10;
 
+static WiFiUDP _udp_instance;
+static Servo _microservo;
 
 static bool _configured = false;
-static WiFiUDP _udp_instance;
 static uint16_t _id = 0x0;
-static Servo _microservo;
 static uint8_t _srv_pos = 0;
-static uint32_t _srv_time = 5000;
+static uint32_t _srv_time = 0;
 
 
 /* Function send_pkt() sends packets
  * Returns true if packet was sent correctly
  */
 bool send_pkt(IPAddress rcv_addr, uint16_t port=STD_PORT, uint8_t cmd=CMD_BRD) {
-    char buffer[6];             // content holder
-    buffer[0] = cmd;            // command
-    buffer[1] = _id >> 8;       // module ID
-    buffer[2] = _id & 0xFF;     //
+    char buffer[6];
+    buffer[0] = cmd;            // CMD
+    buffer[1] = _id >> 8;       // ID
+    buffer[2] = _id & 0xFF;     // ID
     buffer[5] = '\0';
     switch (cmd) {
         case CMD_GET_RES:
-            buffer[3] = get_phr_val();  // photoresistor value
-            buffer[4] = _srv_pos;       // microservo position
+            buffer[3] = get_phr_val();  // PHR
+            buffer[4] = _srv_pos;       // SER
             break;
         default:
             buffer[3] = 0x0;
             buffer[4] = 0x0;
             break;
     }
-    
+
     _udp_instance.beginPacket(rcv_addr, STD_PORT);
     _udp_instance.print(buffer);
     return _udp_instance.endPacket() == 1 ? true : false;
@@ -74,7 +79,7 @@ bool handle_pkt() {
                 return false;
         }
     }
-    
+
     Serial.println("Empty packet");
     return false;
 }
@@ -86,29 +91,29 @@ bool handle_pkt() {
 void srv_time_conf() {
     Serial.println("Configuration has started");
     while (analogRead(D2) > 0) {
-        blink_led(1, 100);
+        blink_led(1, STD_DELAY_XS);
     }
 
     while (analogRead(D2) < 1) {
-        blink_led(1, 100);
+        blink_led(1, STD_DELAY_XS);
     }
 
-    blink_led(1, 1000);
+    blink_led(3, STD_DELAY_S);
     uint32_t start_time = millis();
     _microservo.write(180);
     while (analogRead(D2) > 0) {
-        delay(10);
+        delay(STD_DELAY_XXS);
         continue;
     }
 
     _microservo.write(90);
     _srv_time = millis() - start_time;
-    blink_led(1, 1000);
+    blink_led(1, STD_DELAY_M);
     _srv_pos = 0xFF;
     set_ser_pos(0x0);
     Serial.printf("Configuration has ended. Rotate time: %d\n", _srv_time);
     _configured = true;
-    blink_led(3, 500);
+    blink_led(3, STD_DELAY_S);
 }
 
 
@@ -134,6 +139,14 @@ void set_eeprom_id() {
     _id = EEPROM.read(1) << 8 | EEPROM.read(2);
 }
 
+/* Function set_led()
+ * Setup LED for work
+ */
+void set_led() {
+    pinMode(D1, OUTPUT);
+    digitalWrite(D1, LOW);
+}
+
 
 /* Function set_udp_rcv() starts listening on given port
  * Returns true if listening started correctly
@@ -147,16 +160,16 @@ bool set_udp_rcv(uint16_t port=STD_PORT) {
 /* Function set_wifi_con() establish connection to access point
  * Returns true if connection established correctly
  */
-bool set_wifi_con(uint8_t timeout=60) {
+bool set_wifi_con(uint8_t timeout = 60) {
     WiFi.begin(AP_SSID, AP_PASS);
     Serial.println("Connecting...");
-    for (uint8_t t = 0; t < timeout; t+=2) {
+    for (uint8_t t = 0; t < timeout; t += 2) {
         if (WiFi.status() == WL_CONNECTED) {
             Serial.printf("Connected, IP address: %s\n", WiFi.localIP().toString().c_str());
             return true;
         }
 
-        delay(STD_DELAY);
+        delay(STD_DELAY_M);
     }
 
     Serial.println("Connection failed (timeout)");
@@ -168,7 +181,7 @@ bool set_wifi_con(uint8_t timeout=60) {
  * Returns true if params are set correctly
  */
 bool set_params(char *params) {
-    if (params[1] & 0x10) { // ID
+    if (params[1] & 0x10) {
         uint16_t new_id = params[2] << 8 | params[3];
         if (new_id != _id) {
             _id = new_id;
@@ -178,7 +191,7 @@ bool set_params(char *params) {
         }
     }
 
-    if (params[1] & 0x01) { // microservo position
+    if (params[1] & 0x01) {
         return set_ser_pos(params[4]);
     }
 
@@ -190,7 +203,7 @@ bool set_params(char *params) {
  * Set up microservo conectivity
  */
 void set_ser_con() {
-    _microservo.attach(2);  // D4 pin
+    _microservo.attach(D4);
     _microservo.write(90);
 }
 
@@ -199,7 +212,7 @@ void set_ser_con() {
  * Rotates microservo
  */
 bool set_ser_pos(uint8_t pos) {
-    uint32_t rot_time = static_cast<uint32_t>((_srv_time * abs(_srv_pos - pos))/255);
+    uint32_t rot_time = static_cast<uint32_t>((_srv_time * abs(_srv_pos - pos)) / 255);
     if (_srv_pos > pos) {
         _microservo.write(0);
     }
@@ -242,18 +255,26 @@ uint8_t get_phr_val() {
 
 void setup() {
     Serial.begin(9600);
-    pinMode(D1, OUTPUT);
 
+    set_led();
     set_ser_con();
     set_eeprom_id();
 
     if (!set_wifi_con()) {
         Serial.println("Error while WiFi establishment");
+        while (true) {
+            blink_led(1, STD_DELAY_XS);
+        }
     }
 
     if (!set_udp_rcv(STD_PORT)) {
         Serial.println("Error while UDP start");
+        while (true) {
+            blink_led(1, STD_DELAY_M);
+        }
     }
+
+    blink_led(1, STD_DELAY_L);
 }
 
 
@@ -273,5 +294,5 @@ void loop() {
     }
 
     send_pkt(get_brd_addr());
-    delay(STD_DELAY);
+    delay(STD_DELAY_L);
 }
