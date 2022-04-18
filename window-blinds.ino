@@ -31,6 +31,10 @@ static const uint8_t CMD_GET_RES = 0x10;
 static WiFiUDP _udp_instance;
 static Servo _microservo;
 
+static uint8_t SRV_ROT_RIGHT = 180;
+static uint8_t SRV_ROT_LEFT = 0;
+static uint8_t SRV_ROT_NONE = 89;
+
 static bool _configured = false;
 static uint16_t _id = 0x0;
 static uint8_t _srv_pos = 0;
@@ -90,23 +94,23 @@ bool handle_pkt() {
  */
 void srv_time_conf() {
     Serial.println("Configuration has started");
-    while (analogRead(D2) > 0) {
+    while (analogRead(D2) < 1) {
         blink_led(1, STD_DELAY_XS);
     }
 
-    while (analogRead(D2) < 1) {
+    while (analogRead(D2) > 0) {
         blink_led(1, STD_DELAY_XS);
     }
 
     blink_led(3, STD_DELAY_S);
     uint32_t start_time = millis();
-    _microservo.write(180);
-    while (analogRead(D2) > 0) {
+    _microservo.write(SRV_ROT_RIGHT);
+    while (analogRead(D2) < 1) {
         delay(STD_DELAY_XXS);
         continue;
     }
 
-    _microservo.write(90);
+    _microservo.write(SRV_ROT_NONE);
     _srv_time = millis() - start_time;
     blink_led(1, STD_DELAY_M);
     _srv_pos = 0xFF;
@@ -204,7 +208,7 @@ bool set_params(char *params) {
  */
 void set_ser_con() {
     _microservo.attach(D4);
-    _microservo.write(90);
+    _microservo.write(SRV_ROT_NONE);
 }
 
 
@@ -214,14 +218,14 @@ void set_ser_con() {
 bool set_ser_pos(uint8_t pos) {
     uint32_t rot_time = static_cast<uint32_t>((_srv_time * abs(_srv_pos - pos)) / 255);
     if (_srv_pos > pos) {
-        _microservo.write(0);
+        _microservo.write(SRV_ROT_LEFT);
     }
     else if (_srv_pos < pos) {
-        _microservo.write(180);
+        _microservo.write(SRV_ROT_RIGHT);
     }
 
     delay(rot_time);
-    _microservo.write(90);
+    _microservo.write(SRV_ROT_NONE);
     _srv_pos = pos;
     return true;
 }
@@ -283,7 +287,7 @@ void loop() {
         Serial.println("Microservo is not configured");
     }
 
-    if (analogRead(D2) > 0) {
+    if (analogRead(D2) < 1) {
         srv_time_conf();
     }
 

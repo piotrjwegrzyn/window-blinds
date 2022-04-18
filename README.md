@@ -9,10 +9,14 @@ Arduino-compatibile ESP8266 module's firmware for WiFi connection, photoresistor
 * 1x resistor 500 Ohm
 * 1x LED
 * 1x button switch
+* 1x capacitor 2.2 mF
+* 1x rectifier diode
 
 ### Circut
 ![circut.png](docs/circut.png) 
 
+### Description
+Unfortunatelly, ESP8266 does not provide 5V output pins, so there is external power input to circut. 5V input is required to power on microservo and can be used as input standalone (via Vin pin on ESP8266).
 ### Functionalities
 * WiFi connectivity, broadcast and simple management
 * photoresistor's resistance measurement
